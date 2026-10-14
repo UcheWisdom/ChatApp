@@ -10,8 +10,4 @@
     <PackageReference Include="Microsoft.Extensions.Identity.Stores" Version="10.0.13" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\ChatApp.Infrastructure\ChatApp.Infrastructure.csproj" />
-  </ItemGroup>
-
 </Project>
