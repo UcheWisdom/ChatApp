@@ -20,6 +20,7 @@ public class AuthController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly IUsernameGenerator _usernameGenerator;
     private readonly ILogger<AuthController> _logger;
+    private readonly IEmailTemplateRenderer _templateRenderer;
 
 
     public AuthController(
@@ -27,12 +28,14 @@ public class AuthController : ControllerBase
     IJwtTokenService tokenService,
     IEmailService emailService,
     IUsernameGenerator usernameGenerator,
+    IEmailTemplateRenderer templateRenderer,
     ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _tokenService = tokenService;
         _emailService = emailService;
         _usernameGenerator = usernameGenerator;
+        _templateRenderer = templateRenderer;
         _logger = logger;
     }
 
@@ -146,12 +149,12 @@ public class AuthController : ControllerBase
                            new { userId = user.Id, token = encodedToken }, Request.Scheme)
                        ?? throw new InvalidOperationException("Could not build confirmation link.");
 
-            var html = $"""
-                <h2>Welcome to ChatApp, {WebUtility.HtmlEncode(user.FirstName)}!</h2>
-                <p>Please confirm your email address by clicking the link below:</p>
-                <p><a href="{WebUtility.HtmlEncode(link)}">Confirm my email</a></p>
-                <p>If you didn't create this account, you can ignore this email.</p>
-                """;
+            var html = _templateRenderer.Render("ConfirmEmail", new Dictionary<string, string>
+            {
+                ["FirstName"] = user.FirstName,
+                ["ConfirmationLink"] = link,
+                ["Year"] = DateTime.UtcNow.Year.ToString()
+            });
 
             await _emailService.SendAsync(user.Email!, "Confirm your ChatApp account", html);
         }
