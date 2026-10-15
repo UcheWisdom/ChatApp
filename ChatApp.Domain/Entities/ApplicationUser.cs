@@ -8,7 +8,10 @@ namespace ChatApp.Domain.Entities;
 
 public class ApplicationUser : IdentityUser<Guid>
 {
-    public string DisplayName { get; set; } = string.Empty;
+    //public string DisplayName { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string OtherName { get; set; } = string.Empty;
+    public string FullName => $"{FirstName} {OtherName}".Trim();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastSeenAt { get; set; }
 

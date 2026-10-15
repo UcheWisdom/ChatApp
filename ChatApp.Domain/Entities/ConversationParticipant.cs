@@ -16,4 +16,6 @@ public class ConversationParticipant
 
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastReadAt { get; set; }   // powers unread counts
+
+    public bool IsAdmin { get; set; }
 }

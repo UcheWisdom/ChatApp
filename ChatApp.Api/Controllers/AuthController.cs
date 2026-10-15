@@ -18,17 +18,21 @@ public class AuthController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IJwtTokenService _tokenService;
     private readonly IEmailService _emailService;
+    private readonly IUsernameGenerator _usernameGenerator;
     private readonly ILogger<AuthController> _logger;
 
+
     public AuthController(
-        UserManager<ApplicationUser> userManager,
-        IJwtTokenService tokenService,
-        IEmailService emailService,
-        ILogger<AuthController> logger)
+    UserManager<ApplicationUser> userManager,
+    IJwtTokenService tokenService,
+    IEmailService emailService,
+    IUsernameGenerator usernameGenerator,
+    ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _tokenService = tokenService;
         _emailService = emailService;
+        _usernameGenerator = usernameGenerator;
         _logger = logger;
     }
 
@@ -41,12 +45,24 @@ public class AuthController : ControllerBase
 
         var user = new ApplicationUser
         {
-            UserName = request.Email,
             Email = request.Email,
-            DisplayName = request.DisplayName.Trim()
+            FirstName = request.FirstName.Trim(),
+            OtherName = request.OtherName.Trim()
         };
 
-        var result = await _userManager.CreateAsync(user, request.Password);
+        IdentityResult result = IdentityResult.Failed();
+
+        // Retry if two people grab the same generated username at the same moment
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            user.UserName = await _usernameGenerator.GenerateAsync(user.FirstName, user.OtherName);
+            result = await _userManager.CreateAsync(user, request.Password);
+
+            var usernameTaken = result.Errors.Any(e => e.Code == nameof(IdentityErrorDescriber.DuplicateUserName));
+            if (result.Succeeded || !usernameTaken)
+                break;
+        }
+
         if (!result.Succeeded)
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
@@ -116,7 +132,7 @@ public class AuthController : ControllerBase
         if (user is null)
             return Unauthorized();
 
-        return Ok(new { user.Id, user.Email, user.DisplayName });
+        return Ok(new { user.Id, user.Email, user.UserName, user.FirstName, user.OtherName });
     }
 
     private async Task TrySendConfirmationEmailAsync(ApplicationUser user)
@@ -131,7 +147,7 @@ public class AuthController : ControllerBase
                        ?? throw new InvalidOperationException("Could not build confirmation link.");
 
             var html = $"""
-                <h2>Welcome to ChatApp, {WebUtility.HtmlEncode(user.DisplayName)}!</h2>
+                <h2>Welcome to ChatApp, {WebUtility.HtmlEncode(user.FirstName)}!</h2>
                 <p>Please confirm your email address by clicking the link below:</p>
                 <p><a href="{WebUtility.HtmlEncode(link)}">Confirm my email</a></p>
                 <p>If you didn't create this account, you can ignore this email.</p>
@@ -151,6 +167,8 @@ public class AuthController : ControllerBase
         Token = _tokenService.CreateToken(user),
         UserId = user.Id,
         Email = user.Email!,
-        DisplayName = user.DisplayName
+        UserName = user.UserName!,
+        FirstName = user.FirstName,
+        OtherName = user.OtherName
     };
 }

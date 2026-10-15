@@ -20,7 +20,9 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Gui
 
         builder.Entity<ApplicationUser>(e =>
         {
-            e.Property(u => u.DisplayName).HasMaxLength(100).IsRequired();
+            //e.Property(u => u.DisplayName).HasMaxLength(100).IsRequired();
+            e.Property(u => u.FirstName).HasMaxLength(50).IsRequired();
+            e.Property(u => u.OtherName).HasMaxLength(50).IsRequired();
         });
 
         builder.Entity<Conversation>(e =>
