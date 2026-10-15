@@ -1,24 +1,29 @@
+using System.Text;
+using ChatApp.Api.Settings;
 using ChatApp.Domain.Entities;
 using ChatApp.Domain.Interfaces;
 using ChatApp.Infrastructure.Auth;
 using ChatApp.Infrastructure.Data;
 using ChatApp.Infrastructure.Email;
+using ChatApp.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Resend;
-using System.Text;
-using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddDbContext<ChatDbContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSettings.SectionName));
-builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+// ---------------------------------------------------------------
+// Database
+// ---------------------------------------------------------------
+builder.Services.AddDbContext<ChatDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// ---------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
 {
     options.User.RequireUniqueEmail = true;
@@ -27,6 +32,12 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 .AddRoles<IdentityRole<Guid>>()
 .AddEntityFrameworkStores<ChatDbContext>()
 .AddDefaultTokenProviders();
+
+// ---------------------------------------------------------------
+// JWT authentication
+// ---------------------------------------------------------------
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSettings.SectionName));
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 
 var jwt = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()
           ?? throw new InvalidOperationException("Jwt settings are missing.");
@@ -50,6 +61,9 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+// ---------------------------------------------------------------
+// Email (Resend + HTML templates)
+// ---------------------------------------------------------------
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
 
 builder.Services.AddOptions();
@@ -60,16 +74,22 @@ builder.Services.Configure<ResendClientOptions>(o =>
                  ?? throw new InvalidOperationException("Email:ApiKey is missing.");
 });
 builder.Services.AddTransient<IResend, ResendClient>();
+
 builder.Services.AddScoped<IEmailService, ResendEmailService>();
-
-builder.Services.AddScoped<IUsernameGenerator, UsernameGenerator>();
-
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-//builder.Services.AddOpenApi();
-
 builder.Services.AddSingleton<IEmailTemplateRenderer, EmailTemplateRenderer>();
 
+// ---------------------------------------------------------------
+// Application services and settings
+// ---------------------------------------------------------------
+builder.Services.Configure<FrontendSettings>(builder.Configuration.GetSection(FrontendSettings.SectionName));
+
+builder.Services.AddScoped<IUsernameGenerator, UsernameGenerator>();
+builder.Services.AddScoped<IChatService, ChatService>();
+
+// ---------------------------------------------------------------
+// Controllers + Swagger
+// ---------------------------------------------------------------
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -93,20 +113,19 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Configure the HTTP request pipeline.
+// ---------------------------------------------------------------
+// HTTP pipeline (the order matters)
+// ---------------------------------------------------------------
 if (app.Environment.IsDevelopment())
 {
-    //app.MapOpenApi();
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
 
-app.UseAuthorization();
+app.UseAuthentication();   // who are you?
+app.UseAuthorization();    // are you allowed?
 
 app.MapControllers();
 

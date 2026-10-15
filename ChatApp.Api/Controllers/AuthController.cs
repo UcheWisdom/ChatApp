@@ -1,13 +1,14 @@
-﻿using System.Net;
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text;
 using ChatApp.Api.Dtos.Auth;
+using ChatApp.Api.Settings;
 using ChatApp.Domain.Entities;
 using ChatApp.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Options;
 
 namespace ChatApp.Api.Controllers;
 
@@ -19,23 +20,25 @@ public class AuthController : ControllerBase
     private readonly IJwtTokenService _tokenService;
     private readonly IEmailService _emailService;
     private readonly IUsernameGenerator _usernameGenerator;
-    private readonly ILogger<AuthController> _logger;
     private readonly IEmailTemplateRenderer _templateRenderer;
-
+    private readonly FrontendSettings _frontend;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
-    UserManager<ApplicationUser> userManager,
-    IJwtTokenService tokenService,
-    IEmailService emailService,
-    IUsernameGenerator usernameGenerator,
-    IEmailTemplateRenderer templateRenderer,
-    ILogger<AuthController> logger)
+        UserManager<ApplicationUser> userManager,
+        IJwtTokenService tokenService,
+        IEmailService emailService,
+        IUsernameGenerator usernameGenerator,
+        IEmailTemplateRenderer templateRenderer,
+        IOptions<FrontendSettings> frontendOptions,
+        ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _tokenService = tokenService;
         _emailService = emailService;
         _usernameGenerator = usernameGenerator;
         _templateRenderer = templateRenderer;
+        _frontend = frontendOptions.Value;
         _logger = logger;
     }
 
@@ -125,6 +128,49 @@ public class AuthController : ControllerBase
         return Ok(BuildResponse(user));
     }
 
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+
+        if (user is not null && user.EmailConfirmed)
+            await TrySendPasswordResetEmailAsync(user);
+
+        // Same response whether or not the account exists
+        return Ok(new { message = "If that account exists, a password reset email has been sent." });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+            return BadRequest(new { message = "Invalid or expired reset link." });
+
+        string decodedToken;
+        try
+        {
+            decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(request.Token));
+        }
+        catch (FormatException)
+        {
+            return BadRequest(new { message = "Invalid or expired reset link." });
+        }
+
+        var result = await _userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
+
+        if (!result.Succeeded)
+        {
+            var badToken = result.Errors.Any(e => e.Code == nameof(IdentityErrorDescriber.InvalidToken));
+
+            return badToken
+                ? BadRequest(new { message = "Invalid or expired reset link." })
+                : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+        }
+
+        return Ok(new { message = "Password reset successful. You can now log in." });
+    }
+
     [Authorize]
     [HttpGet("me")]
     public async Task<IActionResult> Me()
@@ -162,6 +208,34 @@ public class AuthController : ControllerBase
         {
             // The account exists, so don't fail registration; the user can request a new email
             _logger.LogError(ex, "Failed to send confirmation email to user {UserId}", user.Id);
+        }
+    }
+
+    private async Task TrySendPasswordResetEmailAsync(ApplicationUser user)
+    {
+        try
+        {
+            var rawToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(rawToken));
+
+            var link = QueryHelpers.AddQueryString(_frontend.ResetPasswordUrl, new Dictionary<string, string?>
+            {
+                ["email"] = user.Email,
+                ["token"] = encodedToken
+            });
+
+            var html = _templateRenderer.Render("ResetPassword", new Dictionary<string, string>
+            {
+                ["FirstName"] = user.FirstName,
+                ["ResetLink"] = link,
+                ["Year"] = DateTime.UtcNow.Year.ToString()
+            });
+
+            await _emailService.SendAsync(user.Email!, "Reset your ChatApp password", html);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send password reset email to user {UserId}", user.Id);
         }
     }
 

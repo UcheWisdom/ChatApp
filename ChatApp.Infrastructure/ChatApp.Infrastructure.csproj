@@ -9,10 +9,12 @@
 
   <ItemGroup>
     <None Remove="Email\Templates\ConfirmEmail.html" />
+    <None Remove="Email\Templates\ResetPassword.html" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Email\Templates\ConfirmEmail.html" />
+    <EmbeddedResource Include="Email\Templates\ResetPassword.html" />
   </ItemGroup>
 
   <ItemGroup>
