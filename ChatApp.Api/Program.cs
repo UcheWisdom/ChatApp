@@ -75,7 +75,11 @@ builder.Services.Configure<ResendClientOptions>(o =>
 });
 builder.Services.AddTransient<IResend, ResendClient>();
 
-builder.Services.AddScoped<IEmailService, ResendEmailService>();
+if (builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Email:LogOnly"))
+    builder.Services.AddScoped<IEmailService, ConsoleEmailService>();
+else
+    builder.Services.AddScoped<IEmailService, ResendEmailService>();
+
 builder.Services.AddSingleton<IEmailTemplateRenderer, EmailTemplateRenderer>();
 
 // ---------------------------------------------------------------
